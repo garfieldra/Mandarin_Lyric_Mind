@@ -1,0 +1,61 @@
+{
+  "result": {
+    "hasMore": false,
+    "artistCount": 2,
+    "hlWords": [
+      "徐佳莹"
+    ],
+    "artists": [
+      {
+        "id": 9940,
+        "name": "徐佳莹",
+        "picUrl": "https://p2.music.126.net/hcwPSdlU235A9VENxlOl2g==/109951167507013622.jpg",
+        "alias": [
+          "LaLa Hsu"
+        ],
+        "albumSize": 58,
+        "picId": 109951167507013622,
+        "fansGroup": null,
+        "img1v1Url": "https://p2.music.126.net/PzKwP2xvQSWIGyJlJtGB8w==/109951167507015586.jpg",
+        "accountId": 2079882,
+        "img1v1": 109951167507015586,
+        "identityIconUrl": "https://p5.music.126.net/obj/wo3DlcOGw6DClTvDisK1/4788940880/1a1f/68f5/b59a/b444b81b88567108ba88194fa29144f5.png",
+        "mvSize": 119,
+        "followed": false,
+        "alg": "alg_search_precision_artist_tab_basic",
+        "alia": [
+          "LaLa Hsu"
+        ],
+        "trans": null
+      },
+      {
+        "id": 52874311,
+        "name": "Ditto",
+        "picUrl": "https://p2.music.126.net/oOq-MRejY09XmfqA-iNQpw==/109951167501675301.jpg",
+        "alias": [
+          "东北徐佳莹",
+          "东北alin",
+          "情歌小公主"
+        ],
+        "albumSize": 4,
+        "picId": 109951167501675301,
+        "fansGroup": null,
+        "img1v1Url": "https://p2.music.126.net/yqX2-YdMQokqW0UdBrQecA==/109951168130044989.jpg",
+        "accountId": 340720539,
+        "img1v1": 109951168130044989,
+        "identityIconUrl": "https://p5.music.126.net/obj/wo3DlcOGw6DClTvDisK1/4874132307/4499/f228/d867/da64b9725e125943ad4e14e4c72d0884.png",
+        "mvSize": 0,
+        "followed": false,
+        "alg": "alg_search_precision_artist_tab_basic",
+        "alia": [
+          "东北徐佳莹",
+          "东北alin",
+          "情歌小公主"
+        ],
+        "trans": null
+      }
+    ],
+    "searchQcReminder": null
+  },
+  "code": 200
+}
