@@ -16,6 +16,7 @@ class RAGConfig:
 
 
     top_k: int = 10
+    top_cmp_k: int = 3
 
     temperature: float = 0.7
     max_tokens: int = 2048

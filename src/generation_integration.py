@@ -142,10 +142,16 @@ class GenerationIntegrationModule:
 1. 'list' - 用户想获取歌曲列表或推荐，只需要菜名
    例如：推荐几首台湾独立音乐、有什么乐团歌曲、给我3首魏如萱的歌
    
-2. 'general' - 其他一般性问题
+2. 'direct' - 不需要使用歌曲知识库的常识性问题
+   例如：介绍一下张悬、为什么歌词中副歌一般会出现好几次
+   
+3. 'compare' - 比较类问题
+   例如：比较一下焦安溥在张悬和安溥时期的作词风格、比较一下魏如萱和艾怡良的作品
+   
+4. 'general' - 其他需要使用歌曲知识库的一般性问题
    例如：《玫瑰色的你》的写作背景是什么、张悬的歌词写作风格是怎样的
    
-请只返回分类结果：list或general
+请只返回分类结果：list或general或compare或direct
 
 用户问题：{query}
 
@@ -163,7 +169,7 @@ class GenerationIntegrationModule:
 
         result = chain.invoke(query).strip()
 
-        if result in ["list", "general"]:
+        if result in ["list", "general", "compare", "direct"]:
             return result
         else:
             return 'general'
@@ -245,6 +251,118 @@ class GenerationIntegrationModule:
             | prompt
             | self.llm
             | StrOutputParser()
+        )
+
+        for chunk in chain.stream(query):
+            yield chunk
+
+    def generate_direct_answer(self, query: str):
+        prompt = ChatPromptTemplate.from_template(
+            """
+你是一名专业的华语独立音乐歌词鉴赏助手。请回答用户的问题。
+    
+用户问题：{question}
+    
+请提供详细、实用的回答。如果信息不足，请如实说明。
+    
+回答：""")
+
+        chain = (
+            {"question": RunnablePassthrough()}
+            | prompt
+            | self.llm
+            | StrOutputParser()
+        )
+
+        response = chain.invoke(query)
+        return response
+
+    def generate_direct_answer_stream(self, query: str):
+        prompt = ChatPromptTemplate.from_template(
+            """
+你是一名专业的华语独立音乐歌词鉴赏助手。请回答用户的问题。
+
+用户问题：{question}
+
+请提供详细、实用的回答。如果信息不足，请如实说明。
+
+回答：""")
+
+        chain = (
+                {"question": RunnablePassthrough()}
+                | prompt
+                | self.llm
+                | StrOutputParser()
+        )
+
+        for chunk in chain.stream(query):
+            yield chunk
+
+    def generate_compare_answer(self, query: str, docs_list: List[List[Document]]) -> str:
+        combined = ""
+        for idx, group in enumerate(docs_list):
+            combined += f"第{idx}组歌曲信息\n"
+            for doc in group:
+                title = doc.metadata.get('title')
+                artist = doc.metadata.get('artist')
+                snippet = (doc.page_content or "")[:400].replace("\n", " ")
+                combined += f"- 《{title}》 by {artist}：{snippet}...\n"
+            combined += "\n"
+
+        prompt = ChatPromptTemplate.from_template("""
+你是一名专业的华语独立音乐歌词鉴赏助手。请根据以下歌曲歌词信息回答用户的问题。
+
+用户问题：{question}
+
+下面是多个检索结果分组，每一组代表一个对比对象。
+（例如不同歌手、不同专辑、不同风格，通过文档内容结合用户问题自行判断）
+{combined}
+
+请你：
+1. 给出一个结构化、清晰、有依据的比较
+2. 引用文档中的具体内容支撑观点
+""")
+
+        chain = (
+            {"question": RunnablePassthrough(), "combined": lambda _: combined}
+            | prompt
+            | self.llm
+            | StrOutputParser()
+        )
+
+        response = chain.invoke(query)
+        return response
+
+    def generate_compare_answer_stream(self, query: str, docs_list: List[List[Document]]) -> str:
+        combined = ""
+        for idx, group in enumerate(docs_list):
+            combined += f"第{idx}组歌曲信息\n"
+            for doc in group:
+                title = doc.metadata.get('title')
+                artist = doc.metadata.get('artist')
+                snippet = (doc.page_content or "")[:400].replace("\n", " ")
+                combined += f"- 《{title}》 by {artist}：{snippet}...\n"
+            combined += "\n"
+
+        prompt = ChatPromptTemplate.from_template("""
+你是一名专业的华语独立音乐歌词鉴赏助手。请根据以下歌曲歌词信息回答用户的问题。
+
+用户问题：{question}
+
+下面是多个检索结果分组，每一组代表一个对比对象。
+（例如不同歌手、不同专辑、不同风格，通过文档内容结合用户问题自行判断）
+{combined}
+
+请你：
+1. 给出一个结构化、清晰、有依据的比较
+2. 引用文档中的具体内容支撑观点
+""")
+
+        chain = (
+                {"question": RunnablePassthrough(), "combined": lambda _: combined}
+                | prompt
+                | self.llm
+                | StrOutputParser()
         )
 
         for chunk in chain.stream(query):

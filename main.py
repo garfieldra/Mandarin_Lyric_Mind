@@ -116,13 +116,54 @@ class LyricMindRAGSystem:
         route_type = self.generation_module.query_router(question)
         print(f"\n 查询类型：{route_type}")
 
+        if route_type == 'direct':
+            print("\n 直接回答类型（不使用知识库）")
+            if stream:
+                return self.generation_module.generate_direct_answer_stream(question)
+            else:
+                return self.generation_module.generate_direct_answer(question)
+
+
         if route_type == 'list':
             #保持原查询
             rewritten_query = question
             print(f" 列表查询保持原样: {rewritten_query}")
+
         else:
             print(f" 智能分析查询...")
             rewritten_query = self.generation_module.query_rewritten(question)
+
+        if route_type == 'compare':
+            subqueries = self.generation_module.extract_subqueries(rewritten_query)
+            print(f"识别到子查询：{subqueries}")
+            all_chunks = []
+            for subquery in subqueries:
+                print(f"\n 子查询：{subquery}")
+
+                rewritten_subquery = subquery
+
+                filters = self._extract_filters_from_query(subquery)
+
+                if filters:
+                    print(f"\n 应用过滤条件：{filters}")
+                    chunks = self.retrieval_module.metadata_filtered_search(rewritten_subquery, filters, top_k = self.config.top_cmp_k)
+                else:
+                    chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k = self.config.top_cmp_k)
+
+                all_chunks.append(chunks)
+            relevant_chunks = all_chunks
+            print("获取完整文档...")
+            relevant_docs = []
+            for chunk_list in relevant_chunks:
+                doc_list = self.data_module.get_parent_documents(chunk_list)
+                relevant_docs.append(doc_list)
+            print(" 生成详细回答...")
+
+            if stream:
+                return self.generation_module.generate_compare_answer_stream(rewritten_query, relevant_docs)
+            else:
+                return self.generation_module.generate_compare_answer(rewritten_query, relevant_docs)
+
 
         subqueries = self.generation_module.extract_subqueries(rewritten_query)
         print(f"识别到子查询：{subqueries}")
