@@ -25,9 +25,9 @@ class RetrievalOptimizationModule:
         self.chunks = chunks
         self.setup_retrievals()
 
-    @staticmethod
-    def chinese_tokenizer(text: str):
-        return list(jieba.cut(text))
+    # @staticmethod
+    # def chinese_tokenizer(text: str):
+    #     return list(jieba.cut(text))
 
     def setup_retrievals(self):
         """设置向量检索器和BM25检索器"""
@@ -45,7 +45,7 @@ class RetrievalOptimizationModule:
             k = 10
         )
 
-        print(self.chinese_tokenizer("张悬的歌曲有哪些"))
+        # print(self.chinese_tokenizer("张悬的歌曲有哪些"))
 
         logger.info("检索器设置完成")
 

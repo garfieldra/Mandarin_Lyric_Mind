@@ -1,0 +1,19 @@
+[project]
+name = "lyricmind"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "click>=8.1.8",
+    "faiss-cpu>=1.13.0",
+    "jieba>=0.42.1",
+    "langchain>=0.3.27",
+    "langchain-community>=0.3.31",
+    "langchain-core>=0.3.79",
+    "langchain-huggingface>=0.3.1",
+    "numpy>=2.0.2",
+    "openai>=2.14.0",
+    "rank-bm25>=0.2.2",
+    "sentence-transformers>=5.1.2",
+]
