@@ -153,14 +153,14 @@ class RetrievalOptimizationModule:
         #     print(f"{i + 1}. 标题={title}  歌手={artist}  parent_id={parent_id}  片段={preview}")
         # print("========================================\n")
 
-        print(">>> Vector检索原始结果:")
+        logger.info(">>> Vector检索原始结果:")
         for i, doc in enumerate(vector_docs):
-            print(
+            logger.info(
                 f"{i + 1}. 标题={doc.metadata.get('title')} 歌手={doc.metadata.get('artist')} 片段={doc.page_content[:30]}")
 
-        print(">>> BM25检索原始结果:")
+        logger.info(">>> BM25检索原始结果:")
         for i, doc in enumerate(bm25_docs):
-            print(
+            logger.info(
                 f"{i + 1}. 标题={doc.metadata.get('title')} 歌手={doc.metadata.get('artist')} 片段={doc.page_content[:30]}")
 
         return reranked_docs

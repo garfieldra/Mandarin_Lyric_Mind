@@ -1,0 +1,2 @@
+[console_scripts]
+lyricmind = lyricmind.cli:main

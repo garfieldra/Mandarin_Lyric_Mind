@@ -11,13 +11,11 @@ from typing import List
 sys.path.append(Path(__file__).parent)
 
 from dotenv import load_dotenv
-from config import DEFAULT_CONFIG, RAGConfig
-from src import (
-    DataPreparationModule,
-    IndexConstructionModule,
-    RetrievalOptimizationModule,
-    GenerationIntegrationModule
-)
+from lyricmind.config import DEFAULT_CONFIG, RAGConfig
+from lyricmind.ingest.data_preparation import DataPreparationModule
+from lyricmind.index.index_construction import IndexConstructionModule
+from lyricmind.retrieval.retrieval_optimization import RetrievalOptimizationModule
+from lyricmind.generation.generation_integration import GenerationIntegrationModule
 
 load_dotenv()
 
@@ -41,23 +39,25 @@ class LyricMindRAGSystem:
         if not Path(self.config.data_path).exists():
             raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
 
-        if not os.getenv("MOONSHOT_API_KEY"):
-            raise ValueError("请设置API_KEY环境变量")
+        if not os.getenv("DEEPSEEK_API_KEY"):
+            raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
 
     def initialize_system(self):
         """初始化所有模块"""
-        print("正在初始化RAG系统...")
+        # print("正在初始化RAG系统...")
+        logger.info("正在初始化RAG系统...")
 
-        print("正在初始化数据准备模块...")
+        # print("正在初始化数据准备模块...")
+        logger.info("正在初始化数据准备模块...")
         self.data_module = DataPreparationModule(self.config.data_path)
 
-        print("正在初始化索引构建模块...")
+        logger.info("正在初始化索引构建模块...")
         self.index_module = IndexConstructionModule(
             model_name = self.config.embedding_model,
             index_save_path = self.config.index_save_path
         )
 
-        print("正在初始化生成集成模块")
+        logger.info("正在初始化生成集成模块")
         self.generation_module = GenerationIntegrationModule(
             model_name = self.config.llm_model,
             temperature = self.config.temperature,
@@ -68,56 +68,63 @@ class LyricMindRAGSystem:
 
     def build_knowledge_base(self):
         """构建知识库"""
-        print("\n正在构建知识库...")
+        logger.info("正在构建知识库...")
 
         # 尝试加载已经保存的索引
         vectorstore = self.index_module.load_index()
 
         if vectorstore is not None:
-            print("成功加载已保存的向量索引")
-            print("加载歌曲文档...")
+            logger.info("成功加载已保存的向量索引")
+            logger.info("加载歌曲文档...")
             self.data_module.load_documents()
-            print("进行文本分块")
+            logger.info("进行文本分块")
             chunks = self.data_module.chunk_documents()
         else:
-            print("未找到已保存的索引，开始构建新索引...")
+            logger.info("未找到已保存的索引，开始构建新索引...")
 
-            print("加载歌曲文档...")
+            logger.info("加载歌曲文档...")
             self.data_module.load_documents()
 
-            print("进行文本分块...")
+            logger.info("进行文本分块...")
             chunks = self.data_module.chunk_documents()
 
-            print("构建向量索引...")
+            logger.info("构建向量索引...")
             vectorstore = self.index_module.build_vector_index(chunks)
 
-            print("保存向量索引...")
+            logger.info("保存向量索引...")
             self.index_module.save_index()
 
-        print("初始化检索优化...")
+        logger.info("初始化检索优化...")
         self.retrieval_module = RetrievalOptimizationModule(vectorstore, chunks)
 
         stats = self.data_module.get_statistics()
-        print(f"\n知识库统计：")
-        print(f"    文档总数：{stats['total_parents']}")
-        print(f"    文本块数：{stats['total_chunks']}")
-        print(f"    歌手分类：{list(stats['artists_count'].keys())}")
-        print(f"    地区分布：{stats['regions_count']}")
+        logger.info("知识库统计｜文档总数：%d|文本块数：%d|歌手分类：%s｜地区分布：%s",
+                    stats['total_parents'],
+                    stats['total_chunks'],
+                    list(stats['artists_count'].keys()),
+                    stats['regions_count'])
+        # logger.info(f"    文档总数：{stats['total_parents']}")
+        # logger.info(f"    文本块数：{stats['total_chunks']}")
+        # logger.info(f"    歌手分类：{list(stats['artists_count'].keys())}")
+        # logger.info(f"    地区分布：{stats['regions_count']}")
 
-        print("知识库构建完成")
+        logger.info("知识库构建完成")
 
     def ask_question(self, question: str, stream: bool = False):
         """回答用户问题"""
         if not all([self.retrieval_module, self.generation_module]):
             raise ValueError("请先构建知识库")
 
-        print(f"\n 用户问题：{question}")
+        # print(f"\n 用户问题：{question}")
+        logger.info("用户问题：%s", question)
 
         route_type = self.generation_module.query_router(question)
-        print(f"\n 查询类型：{route_type}")
+        # print(f"\n 查询类型：{route_type}")
+        logger.info("查询类型：%s", route_type)
 
         if route_type == 'direct':
-            print("\n 直接回答类型（不使用知识库）")
+            # print("\n 直接回答类型（不使用知识库）")
+            logger.info("直接回答类型（不使用知识库）")
             if stream:
                 return self.generation_module.generate_direct_answer_stream(question)
             else:
@@ -127,15 +134,18 @@ class LyricMindRAGSystem:
         if route_type == 'list':
             #保持原查询
             rewritten_query = question
-            print(f" 列表查询保持原样: {rewritten_query}")
+            # print(f" 列表查询保持原样: {rewritten_query}")
+            logger.info(" 列表查询保持原样: %s", rewritten_query)
 
         else:
-            print(f" 智能分析查询...")
+            # print(f" 智能分析查询...")
+            logger.info(" 智能分析查询...")
             rewritten_query = self.generation_module.query_rewritten(question)
 
         if route_type == 'compare':
             subqueries = self.generation_module.extract_subqueries(rewritten_query)
-            print(f"识别到子查询：{subqueries}")
+            # print(f"识别到子查询：{subqueries}")
+            logger.info("识别到子查询：%s", subqueries)
             all_chunks = []
             for subquery in subqueries:
                 print(f"\n 子查询：{subquery}")
@@ -145,19 +155,22 @@ class LyricMindRAGSystem:
                 filters = self._extract_filters_from_query(subquery)
 
                 if filters:
-                    print(f"\n 应用过滤条件：{filters}")
+                    # print(f"\n 应用过滤条件：{filters}")
+                    logger.info("应用过滤条件：%s", filters)
                     chunks = self.retrieval_module.metadata_filtered_search(rewritten_subquery, filters, top_k = self.config.top_cmp_k)
                 else:
                     chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k = self.config.top_cmp_k)
 
                 all_chunks.append(chunks)
             relevant_chunks = all_chunks
-            print("获取完整文档...")
+            # print("获取完整文档...")
+            logger.info("获取完整文档...")
             relevant_docs = []
             for chunk_list in relevant_chunks:
                 doc_list = self.data_module.get_parent_documents(chunk_list)
                 relevant_docs.append(doc_list)
-            print(" 生成详细回答...")
+            # print(" 生成详细回答...")
+            logger.info("生成详细回答...")
 
             if stream:
                 return self.generation_module.generate_compare_answer_stream(rewritten_query, relevant_docs)
@@ -166,12 +179,14 @@ class LyricMindRAGSystem:
 
 
         subqueries = self.generation_module.extract_subqueries(rewritten_query)
-        print(f"识别到子查询：{subqueries}")
+        # print(f"识别到子查询：{subqueries}")
+        logger.info("识别到子查询：%s", subqueries)
 
         all_chunks = []
 
         for subquery in subqueries:
-            print(f"\n 子查询：{subquery}")
+            # print(f"\n 子查询：{subquery}")
+            logger.info("子查询：%s", subquery)
 
             if route_type == 'list':
                 rewritten_subquery = subquery
@@ -180,7 +195,8 @@ class LyricMindRAGSystem:
 
             filters = self._extract_filters_from_query(subquery)
             if filters:
-                print(f" 应用过滤条件：{filters}")
+                # print(f" 应用过滤条件：{filters}")
+                logger.info(" 应用过滤条件：%s", filters)
                 chunks = self.retrieval_module.metadata_filtered_search(rewritten_subquery, filters, top_k = self.config.top_k)
             else:
                 chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k = self.config.top_k)
@@ -209,9 +225,11 @@ class LyricMindRAGSystem:
                 else:
                     chunk_info.append(f"{title}, {artist}(歌词片段)")
 
-            print(f"找到{len(relevant_chunks)}个相关文档块：{','.join(chunk_info)}")
+            # print(f"找到{len(relevant_chunks)}个相关文档块：{','.join(chunk_info)}")
+            logger.info("找到%d个相关文档块：%s", len(relevant_chunks), ','.join(chunk_info))
         else:
-            print(f"找到{len(relevant_chunks)}个相关文档块")
+            # print(f"找到{len(relevant_chunks)}个相关文档块")
+            logger.info("找到%d个相关文档块", len(relevant_chunks))
 
         if not relevant_chunks:
             return "抱歉，没有找到相关的歌曲信息。请尝试其他歌曲名称或关键词。"
@@ -226,11 +244,13 @@ class LyricMindRAGSystem:
                 doc_names.append(title)
 
             if doc_names:
-                print(f"找到文档：{','. join(doc_names)}")
+                # print(f"找到文档：{','. join(doc_names)}")
+                logger.info("找到文档：%s", ','.join(doc_names))
             return self.generation_module.generate_list_answer(question, relevant_docs)
         else:
             # 详细查询，获取完整文档生成详细回答。
-            print("获取完整文档...")
+            # print("获取完整文档...")
+            logger.info("获取完整文档...")
             relevant_docs = self.data_module.get_parent_documents(relevant_chunks)
 
             doc_names = []
@@ -239,11 +259,14 @@ class LyricMindRAGSystem:
                 doc_names.append(title)
 
             if doc_names:
-                print(f"找到文档：{','. join(doc_names)}")
+                # print(f"找到文档：{','. join(doc_names)}")
+                logger.info("找到文档：%s", ','.join(doc_names))
             else:
-                print(f"对应{len(relevant_docs)}个完整文档")
+                # print(f"对应{len(relevant_docs)}个完整文档")
+                logger.info("对应%d个完整文档", len(relevant_docs))
 
-            print(" 生成详细回答...")
+            # print(" 生成详细回答...")
+            logger.info(" 生成详细回答...")
 
             if stream:
                 return self.generation_module.generate_basic_answer_stream(question, relevant_docs)
@@ -343,6 +366,7 @@ class LyricMindRAGSystem:
             except KeyboardInterrupt:
                 break
             except Exception as e:
+                logger.error(f"系统运行时出错：{e}")
                 print(f"处理问题时出错：{e}")
         print("\n感谢使用LyricMind！")
 
