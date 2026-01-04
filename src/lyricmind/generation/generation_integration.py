@@ -5,9 +5,7 @@ import logging
 import os
 from typing import List
 
-from click import prompt
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_community.chat_models.moonshot import  MoonshotChat
 from langchain_community.chat_models.openai import ChatOpenAI
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough
@@ -18,12 +16,17 @@ logger = logging.getLogger(__name__)
 class GenerationIntegrationModule:
     """生成集成模块"""
 
-    def __init__(self, model_name = "deepseek-reasoner", temperature: float = 0.1, max_tokens: int = 2048):
+    def __init__(self, model_name = "deepseek-reasoner", temperature: float = 0.1, max_tokens: int = 2048, llm = None):
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.llm = None
-        self.setup_llm()
+        if llm is None:
+            self.llm = None
+            self.setup_llm()
+        else:
+            self.llm = llm
+        # self.llm = None
+        # self.setup_llm()
 
     def setup_llm(self):
         """初始化大语言模型"""
@@ -402,14 +405,3 @@ class GenerationIntegrationModule:
             current_length += len(doc_text)
 
         return "\n" + "="*50 + "\n".join(context_parts)
-
-
-
-
-
-
-
-
-
-
-
