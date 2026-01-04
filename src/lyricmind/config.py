@@ -7,8 +7,8 @@ from typing import Dict, Any
 class RAGConfig:
     """RAG系统配置类"""
 
-    data_path: str = "./data"
-    index_save_path: str = "./index"
+    data_path: str = "data"
+    index_save_path: str = "index"
 
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     # llm_model: str = "kimi-k2-0711-preview"
