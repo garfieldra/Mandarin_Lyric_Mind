@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import List
 
-sys.path.append(Path(__file__).parent)
+# sys.path.append(Path(__file__).parent)
 
 from dotenv import load_dotenv
 from lyricmind.config import DEFAULT_CONFIG, RAGConfig
@@ -28,37 +28,49 @@ logger = logging.getLogger(__name__)
 class LyricMindRAGSystem:
     """LyricMind歌词RAG系统主类"""
 
-    def __init__(self, config: RAGConfig = None):
+    def __init__(self, config: RAGConfig = None, validate_env: bool = True):
         """初始化RAG系统"""
         self.config = config or DEFAULT_CONFIG
+
+        # 允许跳过环境检查
+        if validate_env:
+            if not Path(self.config.data_path).exists():
+                raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
+            if not os.getenv("DEEPSEEK_API_KEY"):
+                raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
         self.data_module = None
         self.index_module = None
         self.retrieval_module = None
         self.generation_module = None
 
-        if not Path(self.config.data_path).exists():
-            raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
+        # if not Path(self.config.data_path).exists():
+        #     raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
+        #
+        # if not os.getenv("DEEPSEEK_API_KEY"):
+        #     raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
 
-        if not os.getenv("DEEPSEEK_API_KEY"):
-            raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
-
-    def initialize_system(self):
+    def initialize_system(
+            self,
+            data_module = None,
+            index_module = None,
+            generation_module = None,
+    ):
         """初始化所有模块"""
         # print("正在初始化RAG系统...")
         logger.info("正在初始化RAG系统...")
 
         # print("正在初始化数据准备模块...")
         logger.info("正在初始化数据准备模块...")
-        self.data_module = DataPreparationModule(self.config.data_path)
+        self.data_module = data_module or DataPreparationModule(self.config.data_path)
 
         logger.info("正在初始化索引构建模块...")
-        self.index_module = IndexConstructionModule(
+        self.index_module = index_module or IndexConstructionModule(
             model_name = self.config.embedding_model,
             index_save_path = self.config.index_save_path
         )
 
         logger.info("正在初始化生成集成模块")
-        self.generation_module = GenerationIntegrationModule(
+        self.generation_module = generation_module or GenerationIntegrationModule(
             model_name = self.config.llm_model,
             temperature = self.config.temperature,
             max_tokens = self.config.max_tokens
@@ -383,17 +395,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
