@@ -1,0 +1,15 @@
+# 忽略 Git 文件
+.git/
+.gitignore
+
+# 忽略环境与缓存
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# 忽略本地挂载的数据和日志（这些在 K8s 中会通过 PV/PVC 动态挂载）
+logs/
+Index/

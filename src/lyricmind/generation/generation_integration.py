@@ -1,13 +1,12 @@
 """
 生成集成模块
 """
+import json
 import logging
 import os
 from typing import List
 
-from click import prompt
 from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_community.chat_models.moonshot import  MoonshotChat
 from langchain_community.chat_models.openai import ChatOpenAI
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnablePassthrough
@@ -18,12 +17,17 @@ logger = logging.getLogger(__name__)
 class GenerationIntegrationModule:
     """生成集成模块"""
 
-    def __init__(self, model_name = "deepseek-reasoner", temperature: float = 0.1, max_tokens: int = 2048):
+    def __init__(self, model_name = "deepseek-reasoner", temperature: float = 0.1, max_tokens: int = 2048, llm = None):
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.llm = None
-        self.setup_llm()
+        if llm is None:
+            self.llm = None
+            self.setup_llm()
+        else:
+            self.llm = llm
+        # self.llm = None
+        # self.setup_llm()
 
     def setup_llm(self):
         """初始化大语言模型"""
@@ -60,7 +64,7 @@ class GenerationIntegrationModule:
 
 用户问题：{question}
 
-相关食谱信息：
+相关歌曲信息：
 {context}
 
 请提供详细、实用的回答。如果信息不足，请诚实说明。
@@ -68,7 +72,7 @@ class GenerationIntegrationModule:
 回答：""")
         # 使用LCEL构建链
         chain = (
-            {"question": RunnablePassthrough, "context": lambda _: context}
+            {"question": RunnablePassthrough(), "context": lambda _: context}
             | prompt
             | self.llm
             | StrOutputParser()
@@ -368,6 +372,76 @@ class GenerationIntegrationModule:
         for chunk in chain.stream(query):
             yield chunk
 
+    def extract_metadata_filters(self, query: str) -> dict:
+        """使用 LLM 智能提取元数据过滤条件"""
+        prompt = ChatPromptTemplate.from_template("""
+    你是一个音乐元数据提取专家。请从用户问题中提取用于数据库查询的结构化过滤条件。
+
+    可提取字段及规则：
+    1. 'artist': 明确提到的歌手或乐团名称。
+    2. 'album': 明确提到的专辑名称。
+    3. 'title': 明确提到的歌曲名称。
+    4. 'region': 提到的地区（如：台湾、中国大陆、香港）。
+    5. 'year': 提到的具体年份。
+
+    **极其重要的约束（防止过度提取）**：
+    - 严禁提取描述性词汇。例如“工业城市”、“写作背景”、“作词风格”、“如何”、“意义”等词汇绝对不是歌曲或专辑名。
+    - 如果不确定某个词是否为专有名词，请不要提取。
+    - 只有当用户明确指代某个作品时才提取。
+    - 如果没有任何明确条件，请返回空 JSON：{{}}。
+
+    请仅返回 JSON 格式结果。
+
+    用户问题：{question}
+
+    JSON 输出：""")
+
+        chain = (
+                {"question": RunnablePassthrough()}
+                | prompt
+                | self.llm
+                | StrOutputParser()
+        )
+
+        try:
+            result_text = chain.invoke(query).strip()
+            # 清理可能的 Markdown 标记
+            if "```json" in result_text:
+                result_text = result_text.split("```json")[1].split("```")[0].strip()
+            return json.loads(result_text)
+        except Exception as e:
+            logger.error(f"提取过滤条件出错: {e}")
+            return {}
+
+
+    def generate_hyde_text(self, query: str) -> str:
+        prompt = f"请针对以下主题，写一段可能出现在华语独立音乐歌词中的意象描写或相关的乐评片段：{query}"
+        return self.llm.invoke(prompt).content
+
+    def decide_retrieval_strategy(self, query: str) -> str:
+        prompt = PromptTemplate(
+            template="""你是一个音乐搜索意图分析专家。请判断用户查询的检索策略。
+
+    分类准则：
+    1. 'filter' (硬性过滤)：查询意图极其明确、简单，直接针对特定的歌手、专辑或歌曲。
+       - 示例：“张悬的歌词有怎样的风格”、“搜一下周杰伦的青花瓷”、“陈绮贞有哪些歌”。
+    2. 'hybrid' (混合检索)：查询涉及意象分析、情感解读、对比、或是稍微复杂一点的描述性提问。
+       - 示例：“对比草东和万青的虚无感”、“分析万青歌词里的工业意象”、“描写失眠的歌词有哪些”。
+
+    注意：除非查询非常简单明确，否则一律判定为 'hybrid'。
+
+    请只返回单词 'filter' 或 'hybrid'。
+
+    问题：{query}
+    结果：""",
+            input_variables=["query"],
+        )
+        # 这里可以使用更快的模型，比如 deepseek-chat
+        chain = prompt | self.llm | StrOutputParser()
+        result = chain.invoke({"query": query}).strip().lower()
+
+        # 简单清洗，确保只返回两个关键词之一
+        return 'filter' if 'filter' in result else 'hybrid'
 
     def _build_context(self, docs: List[Document], max_length: int = 2000) -> str:
         """构建上下文字符串"""
@@ -402,14 +476,3 @@ class GenerationIntegrationModule:
             current_length += len(doc_text)
 
         return "\n" + "="*50 + "\n".join(context_parts)
-
-
-
-
-
-
-
-
-
-
-

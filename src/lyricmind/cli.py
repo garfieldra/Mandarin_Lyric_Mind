@@ -8,13 +8,14 @@ import logging
 from pathlib import Path
 from typing import List
 
-sys.path.append(Path(__file__).parent)
+# sys.path.append(Path(__file__).parent)
 
 from dotenv import load_dotenv
 from lyricmind.config import DEFAULT_CONFIG, RAGConfig
 from lyricmind.ingest.data_preparation import DataPreparationModule
 from lyricmind.index.index_construction import IndexConstructionModule
 from lyricmind.retrieval.retrieval_optimization import RetrievalOptimizationModule
+from lyricmind.graph.graph_search import LyricGraphSearcher
 from lyricmind.generation.generation_integration import GenerationIntegrationModule
 
 load_dotenv()
@@ -28,37 +29,50 @@ logger = logging.getLogger(__name__)
 class LyricMindRAGSystem:
     """LyricMind歌词RAG系统主类"""
 
-    def __init__(self, config: RAGConfig = None):
+    def __init__(self, config: RAGConfig = None, validate_env: bool = True):
         """初始化RAG系统"""
         self.config = config or DEFAULT_CONFIG
+
+        # 允许跳过环境检查
+        if validate_env:
+            # if not Path(self.config.data_path).exists():
+            #     raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
+            if not os.getenv("DEEPSEEK_API_KEY"):
+                raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
         self.data_module = None
         self.index_module = None
         self.retrieval_module = None
         self.generation_module = None
 
-        if not Path(self.config.data_path).exists():
-            raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
+        # if not Path(self.config.data_path).exists():
+        #     raise FileNotFoundError(f"数据路径不存在：{self.config.data_path}")
+        #
+        # if not os.getenv("DEEPSEEK_API_KEY"):
+        #     raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
 
-        if not os.getenv("DEEPSEEK_API_KEY"):
-            raise ValueError("请设置DEEPSEEK_API_KEY环境变量")
-
-    def initialize_system(self):
+    def initialize_system(
+            self,
+            data_module = None,
+            index_module = None,
+            generation_module = None,
+    ):
         """初始化所有模块"""
         # print("正在初始化RAG系统...")
         logger.info("正在初始化RAG系统...")
 
         # print("正在初始化数据准备模块...")
         logger.info("正在初始化数据准备模块...")
-        self.data_module = DataPreparationModule(self.config.data_path)
+        self.data_module = data_module or DataPreparationModule(self.config.data_path)
 
         logger.info("正在初始化索引构建模块...")
-        self.index_module = IndexConstructionModule(
+        self.index_module = index_module or IndexConstructionModule(
             model_name = self.config.embedding_model,
-            index_save_path = self.config.index_save_path
+            connection_args={"uri": self.config.milvus_uri},
+            collection_name=self.config.collection_name
         )
 
         logger.info("正在初始化生成集成模块")
-        self.generation_module = GenerationIntegrationModule(
+        self.generation_module = generation_module or GenerationIntegrationModule(
             model_name = self.config.llm_model,
             temperature = self.config.temperature,
             max_tokens = self.config.max_tokens
@@ -73,29 +87,42 @@ class LyricMindRAGSystem:
         # 尝试加载已经保存的索引
         vectorstore = self.index_module.load_index()
 
-        if vectorstore is not None:
-            logger.info("成功加载已保存的向量索引")
-            logger.info("加载歌曲文档...")
+        if vectorstore is None or self.index_module.get_count() == 0:
+            logger.info("未找到现有集合，开始初始化数据并构建索引...")
             self.data_module.load_documents()
-            logger.info("进行文本分块")
             chunks = self.data_module.chunk_documents()
-        else:
-            logger.info("未找到已保存的索引，开始构建新索引...")
-
-            logger.info("加载歌曲文档...")
-            self.data_module.load_documents()
-
-            logger.info("进行文本分块...")
-            chunks = self.data_module.chunk_documents()
-
-            logger.info("构建向量索引...")
             vectorstore = self.index_module.build_vector_index(chunks)
+        else:
+            logger.info("成功连接到已有的 Milvus 集合")
+            self.data_module.load_documents()
+            chunks = self.data_module.chunk_documents()
 
-            logger.info("保存向量索引...")
-            self.index_module.save_index()
+        # if vectorstore is not None:
+        #     logger.info("成功加载已保存的向量索引")
+        #     logger.info("加载歌曲文档...")
+        #     self.data_module.load_documents()
+        #     logger.info("进行文本分块")
+        #     chunks = self.data_module.chunk_documents()
+        # else:
+        #     logger.info("未找到已保存的索引，开始构建新索引...")
+        #
+        #     logger.info("加载歌曲文档...")
+        #     self.data_module.load_documents()
+        #
+        #     logger.info("进行文本分块...")
+        #     chunks = self.data_module.chunk_documents()
+        #
+        #     logger.info("构建向量索引...")
+        #     vectorstore = self.index_module.build_vector_index(chunks)
+        #
+        #     logger.info("保存向量索引...")
+        #     self.index_module.save_index()
+
+        logger.info("初始化图谱搜索...")
+        self.graph_searcher = LyricGraphSearcher()
 
         logger.info("初始化检索优化...")
-        self.retrieval_module = RetrievalOptimizationModule(vectorstore, chunks)
+        self.retrieval_module = RetrievalOptimizationModule(vectorstore, chunks, self.graph_searcher, self.generation_module.llm)
 
         stats = self.data_module.get_statistics()
         logger.info("知识库统计｜文档总数：%d|文本块数：%d|歌手分类：%s｜地区分布：%s",
@@ -121,6 +148,9 @@ class LyricMindRAGSystem:
         route_type = self.generation_module.query_router(question)
         # print(f"\n 查询类型：{route_type}")
         logger.info("查询类型：%s", route_type)
+
+        retrieval_strategy = self.generation_module.decide_retrieval_strategy(question)
+        logger.info(f"检索策略决策结果：{retrieval_strategy}")
 
         if route_type == 'direct':
             # print("\n 直接回答类型（不使用知识库）")
@@ -156,8 +186,11 @@ class LyricMindRAGSystem:
 
                 if filters:
                     # print(f"\n 应用过滤条件：{filters}")
-                    logger.info("应用过滤条件：%s", filters)
+                    logger.info("应用初始过滤条件：%s", filters)
                     chunks = self.retrieval_module.metadata_filtered_search(rewritten_subquery, filters, top_k = self.config.top_cmp_k)
+                    if not chunks:
+                        logger.warning("精准过滤未找到结果，自动回退至全库混合检索")
+                        chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k=self.config.top_k)
                 else:
                     chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k = self.config.top_cmp_k)
 
@@ -193,14 +226,16 @@ class LyricMindRAGSystem:
             else:
                 rewritten_subquery = self.generation_module.query_rewritten(subquery)
 
-            filters = self._extract_filters_from_query(subquery)
-            if filters:
-                # print(f" 应用过滤条件：{filters}")
-                logger.info(" 应用过滤条件：%s", filters)
-                chunks = self.retrieval_module.metadata_filtered_search(rewritten_subquery, filters, top_k = self.config.top_k)
+            if retrieval_strategy == 'filter':
+                filters = self._extract_filters_from_query(subquery)
+                if filters:
+                    # print(f" 应用过滤条件：{filters}")
+                    logger.info(" 应用过滤条件：%s", filters)
+                    chunks = self.retrieval_module.metadata_filtered_search(rewritten_subquery, filters, top_k = self.config.top_k)
+                else:
+                    chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k = self.config.top_k)
             else:
-                chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k = self.config.top_k)
-
+                chunks = self.retrieval_module.hybrid_search(rewritten_subquery, top_k=self.config.top_k)
             all_chunks.extend(chunks)
 
         relevant_chunks = all_chunks
@@ -275,39 +310,41 @@ class LyricMindRAGSystem:
 
     def _extract_filters_from_query(self, query: str) -> dict:
         """从用户问题中提取元数据过滤条件"""
-        filters = {}
-
-        artists = {d.metadata.get("artist") for d in self.data_module.parent_documents}
-        albums = {d.metadata.get("album") for d in self.data_module.parent_documents}
-        regions = {d.metadata.get("region") for d in self.data_module.parent_documents}
-        years = {d.metadata.get("year") for d in self.data_module.parent_documents}
-        titles = {d.metadata.get("title") for d in self.data_module.parent_documents}
-
-        artists.discard(None); albums.discard(None)
-        regions.discard(None); years.discard(None); titles.discard(None)
-
-        for artist in sorted(artists, key = len, reverse = True):
-            if artist and artist in query:
-                filters["artist"] = artist
-                break
-
-        for album in sorted(albums, key = len, reverse = True):
-            if album and album in query:
-                filters["album"] = album
-
-        for region in sorted(regions, key = len, reverse = True):
-            if region and region in query:
-                filters["region"] = region
-
-        for year in sorted(years, key = len, reverse = True):
-            if year and year in query:
-                filters["year"] = year
-
-        for title in sorted(titles, key = len, reverse = True):
-            if title and title in query:
-                filters["title"] = title
-
-        return filters
+        # filters = {}
+        #
+        # artists = {d.metadata.get("artist") for d in self.data_module.parent_documents}
+        # albums = {d.metadata.get("album") for d in self.data_module.parent_documents}
+        # regions = {d.metadata.get("region") for d in self.data_module.parent_documents}
+        # years = {d.metadata.get("year") for d in self.data_module.parent_documents}
+        # titles = {d.metadata.get("title") for d in self.data_module.parent_documents}
+        #
+        # artists.discard(None); albums.discard(None)
+        # regions.discard(None); years.discard(None); titles.discard(None)
+        #
+        # for artist in sorted(artists, key = len, reverse = True):
+        #     if artist and artist in query:
+        #         filters["artist"] = artist
+        #         break
+        #
+        # for album in sorted(albums, key = len, reverse = True):
+        #     if album and album in query:
+        #         filters["album"] = album
+        #
+        # for region in sorted(regions, key = len, reverse = True):
+        #     if region and region in query:
+        #         filters["region"] = region
+        #
+        # for year in sorted(years, key = len, reverse = True):
+        #     if year and year in query:
+        #         filters["year"] = year
+        #
+        # for title in sorted(titles, key = len, reverse = True):
+        #     if title and title in query:
+        #         filters["title"] = title
+        #
+        # return filters
+        # 废弃原有的循环匹配逻辑，改用 LLM 提取
+        return self.generation_module.extract_metadata_filters(query)
 
 
     def search_by_artist(self, artist: str, query: str = "") -> List[str]:
@@ -383,17 +420,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -6,6 +6,7 @@ from typing import List
 from pathlib import Path
 
 from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_milvus import Milvus
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
@@ -15,14 +16,20 @@ class IndexConstructionModule:
     """
     索引构建模块
     """
-    def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5", index_save_path: str = "../vector_index"):
-        """
-        初始化索引构建模块
-        :param model_name:
-        :param index_save_path:
-        """
+    # def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5", index_save_path: str = "../vector_index"):
+    def __init__(self, model_name: str = "BAAI/bge-small-zh-v1.5",
+                 connection_args: dict = {"uri": "http://localhost:19530"},
+                 collection_name:str ="liricmind"):
         self.model_name = model_name
-        self.index_save_path = index_save_path
+        self.connection_args = connection_args  # 存储数据库地址
+        self.collection_name = collection_name  # 存储“表名”
+        # """
+        # 初始化索引构建模块
+        # :param model_name:
+        # :param index_save_path:
+        # """
+        # self.model_name = model_name
+        # self.index_save_path = index_save_path
         self.embeddings = None
         self.vectorstore = None
         self.setup_embeddings()
@@ -51,10 +58,18 @@ class IndexConstructionModule:
         if not chunks:
             raise ValueError("文档块列表不能为空")
 
-        #构建FAISS向量存储
-        self.vectorstore = FAISS.from_documents(
+        # self.vectorstore = FAISS.from_documents(
+        #     documents=chunks,
+        #     embedding=self.embeddings
+        # )
+
+        # 构建Milvus向量存储
+        self.vectorstore = Milvus.from_documents(
             documents=chunks,
-            embedding=self.embeddings
+            embedding=self.embeddings,
+            collection_name=self.collection_name,
+            connection_args=self.connection_args,
+            drop_old = True #每次重新构建时，必须删掉旧表重建新表
         )
 
         logger.info(f"向量索引构建完成，包含{len(chunks)}个向量")
@@ -67,52 +82,77 @@ class IndexConstructionModule:
         :return:
         """
         if not self.vectorstore:
-            raise ValueError("请先构建向量索引")
-        logger.info(f"正在添加{len(new_chunks)}个新文档到索引")
+            self.load_index()
         self.vectorstore.add_documents(new_chunks)
-        logger.info("新文档添加完成")
+        #     raise ValueError("请先构建向量索引")
+        # logger.info(f"正在添加{len(new_chunks)}个新文档到索引")
+        # self.vectorstore.add_documents(new_chunks)
+        # logger.info("新文档添加完成")
 
     def save_index(self):
         """
         保存向量到配置的路径
         """
-        if not self.vectorstore:
-            raise ValueError("请先构建向量索引")
-
-        Path(self.index_save_path).mkdir(parents=True, exist_ok=True)
-
-        self.vectorstore.save_local(self.index_save_path)
-        logger.info(f"向量索引已经保存到：{self.index_save_path}")
+        # if not self.vectorstore:
+        #     raise ValueError("请先构建向量索引")
+        #
+        # Path(self.index_save_path).mkdir(parents=True, exist_ok=True)
+        #
+        # self.vectorstore.save_local(self.index_save_path)
+        logger.info(f"向量索引已经完成持久化")
 
     def load_index(self):
         """
-        从配置的路径加载索引
+        连接现有的 Milvus 集合
         """
-        if not self.embeddings:
+        if not self.vectorstore:
             self.setup_embeddings()
-
-        if not Path(self.index_save_path).exists():
-            logger.info(f"索引路径{self.index_save_path}不存在，将构建新索引")
-            return None
-
+        # if not Path(self.index_save_path).exists():
+        #     logger.info(f"索引路径{self.index_save_path}不存在，将构建新索引")
+        #     return None
+        #
+        # try:
+        #     self.vectorstore = FAISS.load_local(
+        #         self.index_save_path,
+        #         self.embeddings,
+        #         allow_dangerous_deserialization=True
+        #     )},将构建新索引")
+        #     return None
         try:
-            self.vectorstore = FAISS.load_local(
-                self.index_save_path,
-                self.embeddings,
-                allow_dangerous_deserialization=True
+            self.vectorstore = Milvus(
+                embedding_function=self.embeddings,
+                collection_name=self.collection_name,
+                connection_args=self.connection_args,
+                auto_id = True
             )
-            logger.info(f"向量索引已经从{self.index_save_path}中加载")
+            logger.info(f"成功连接到 Milvus 集合：{self.collection_name}")
             return self.vectorstore
         except Exception as e:
-            logger.warning(f"加载向量索引失败：{e},将构建新索引")
+            logger.warning(f"加载 Milvus 索引失败：{e}")
             return None
+
+    def get_count(self) -> int:
+        """获取当前集合中的实体（向量）总数"""
+        if self.vectorstore is not None:
+            try:
+                return self.vectorstore.col.num_entities
+            except Exception:
+                return 0
+        return 0
+
 
     def similarity_search(self, query: str, k: int = 5) -> List[Document]:
         """
+            logger.info(f"向量索引已经从{self.index_save_path}中加载")
+            return self.vectorstore
+        except Exception as e:
+            logger.warning(f"加载向量索引失败：{e
         相似度搜索
         """
         if not self.vectorstore:
-            raise ValueError("请先构建或加载向量索引")
+            self.load_index()
+            if not self.vectorstore:
+                raise ValueError("未找到可用的向量存储")
 
         return self.vectorstore.similarity_search(query, k=k)
 
