@@ -14,6 +14,11 @@ class RAGConfig:
     # llm_model: str = "kimi-k2-0711-preview"
     llm_model: str = "deepseek-reasoner"
 
+    # milvus_uri: str = "http://host.docker.internal:19530"
+    milvus_uri: str = "http://localhost:19530"
+    collection_name: str = "lyricmind_v1"
+
+
 
     top_k: int = 10
     top_cmp_k: int = 3
@@ -33,7 +38,8 @@ class RAGConfig:
         """转换为字典"""
         return{
             "data_path": self.data_path,
-            "index_save_path": self.index_save_path,
+            "milvus_uri": self.milvus_uri,
+            "collection_name": self.collection_name,
             "embedding_model": self.embedding_model,
             "llm_model": self.llm_model,
             "top_k": self.top_k,

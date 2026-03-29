@@ -1,0 +1,47 @@
+---
+# 1. 部署声明 (Deployment)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lyricmind-api-deployment
+  labels:
+    app: lyricmind-api
+spec:
+  replicas: 1 # 启动 1 个容器副本
+  selector:
+    matchLabels:
+      app: lyricmind-api
+  template:
+    metadata:
+      labels:
+        app: lyricmind-api
+    spec:
+      containers:
+      - name: lyricmind-api-container
+        image: lyricmind-api:v1.0
+        # 【极其关键】告诉 K8s 必须使用本地镜像，不要去网上拉取！
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+        env:
+        # 将你的 API Key 作为环境变量注入
+        - name: DEEPSEEK_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: deepseek-secret  # 刚才创建的密码箱名字
+              key: api-key
+
+---
+# 2. 服务声明 (Service)
+apiVersion: v1
+kind: Service
+metadata:
+  name: lyricmind-api-service
+spec:
+  # LoadBalancer 模式在 Docker Desktop 环境下会直接映射到本机的 8000 端口
+  type: LoadBalancer
+  ports:
+  - port: 8000
+    targetPort: 8000
+  selector:
+    app: lyricmind-api
